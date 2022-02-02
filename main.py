@@ -12,13 +12,13 @@ model = 'en_core_sci_md'
 
 linkerSettings = {
     "linker_name": "mesh",
-    "resolve_abbreviations": True,
+    "resolve_abbreviations": False,
     "max_entities_per_mention": 1,
     "filter_for_definitions": False
 }
 
 printRawData = False
-printProgress = False
+printProgress = True
 printEntities = False
 printDefinitions = False
 
@@ -117,15 +117,20 @@ def getTable(table):
 header, columns = getTable(table)
 
 nlp = spacy.load(model)
-nlp.add_pipe("abbreviation_detector")
+if linkerSettings["resolve_abbreviations"]:
+    nlp.add_pipe("abbreviation_detector")
 linkerPipe = nlp.add_pipe("scispacy_linker", config = linkerSettings)
 
 rawData = []
 entityData = []
 
 for i, c in enumerate(header):
+    if len(c) == 0:
+        if printProgress:
+            print('Skipping empty column', i)
+        continue
     if printProgress:
-        print('Processing column ' + str(i))
+        print('Processing column', i)
     text = ', '.join(c)
     for row in columns[i]:
         text += '; ' + row
