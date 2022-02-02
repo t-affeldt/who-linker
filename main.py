@@ -7,7 +7,17 @@ import spacy
 from scispacy.abbreviation import AbbreviationDetector
 from scispacy.linking import EntityLinker
 
-table = 'AIR_90'
+tables = [
+    "AIR_90",
+    "CHILDMORT5TO14",
+    "DEVICES23",
+    "E25_ban_display_pt_of_sale",
+    "FINPROTECTION_IMP_PG_310_STD",
+    "GDO_q14x2_5",
+    "GHE_YLDNUM",
+    "RSUD_18",
+    "SA_0000001470"
+]
 model = 'en_core_sci_md'
 
 linkerSettings = {
@@ -23,9 +33,9 @@ printEntities = False
 printDefinitions = False
 
 writeRawData = True
-writeRawDataFile = './output/raw.txt'
+writeRawDataFile = './output/{id}_raw.txt'
 writeEntityData = True
-writeEntityDataFile = './output/result.json'
+writeEntityDataFile = './output/{id}_result.json'
 
 dimensionValues = {}
 
@@ -113,51 +123,56 @@ def getTable(table):
             columnData[len(columns) + 1].append(row['Comments'])
     return header, columnData
 
-
-header, columns = getTable(table)
-
-nlp = spacy.load(model)
-if linkerSettings["resolve_abbreviations"]:
-    nlp.add_pipe("abbreviation_detector")
-linkerPipe = nlp.add_pipe("scispacy_linker", config = linkerSettings)
-
-rawData = []
-entityData = []
-
-for i, c in enumerate(header):
-    if len(c) == 0:
-        if printProgress:
-            print('Skipping empty column', i)
-        continue
+for table in tables:
     if printProgress:
-        print('Processing column', i)
-    text = ', '.join(c)
-    for row in columns[i]:
-        text += '; ' + row
-    rawData.append(text)
-    if printRawData:
-        print(text)
-    doc = nlp(text)
-    #print(list(doc.sents))
-    for entity in doc.ents:
-        definitions = []
-        if printEntities:
-            print(entity.text)
-        for kb_ent in entity._.kb_ents:
-            definitions.append(linkerPipe.kb.cui_to_entity[kb_ent[0]])
-        entityData.append({ "name": entity.text, "definitions": definitions })
-        if printDefinitions:
-            for definition in definitions:
-                print(definition)
-        if printEntities or printDefinitions:
-            print("")
+        print("Processing table", table)
 
-if writeRawData:
-    f = open(writeRawDataFile, "w+")
-    f.write("\r\n".join(rawData))
-    f.close()
+    header, columns = getTable(table)
 
-if writeEntityData:
-    f = open(writeEntityDataFile, "w+")
-    f.write(json.dumps(entityData, indent = 2))
-    f.close()
+    nlp = spacy.load(model)
+    if linkerSettings["resolve_abbreviations"]:
+        nlp.add_pipe("abbreviation_detector")
+    linkerPipe = nlp.add_pipe("scispacy_linker", config = linkerSettings)
+
+    rawData = []
+    entityData = []
+
+    for i, c in enumerate(header):
+        if len(c) == 0:
+            if printProgress:
+                print('Skipping empty column', i)
+            continue
+        if printProgress:
+            print('Processing column', i)
+        text = ', '.join(c)
+        for row in columns[i]:
+            text += '; ' + row
+        rawData.append(text)
+        if printRawData:
+            print(text)
+        doc = nlp(text)
+        #print(list(doc.sents))
+        for entity in doc.ents:
+            definitions = []
+            if printEntities:
+                print(entity.text)
+            for kb_ent in entity._.kb_ents:
+                definitions.append(linkerPipe.kb.cui_to_entity[kb_ent[0]])
+            entityData.append({ "name": entity.text, "definitions": definitions })
+            if printDefinitions:
+                for definition in definitions:
+                    print(definition)
+            if printEntities or printDefinitions:
+                print("")
+
+    if writeRawData:
+        fname = writeRawDataFile.replace('{id}', table)
+        f = open(fname, "w+")
+        f.write("\r\n".join(rawData))
+        f.close()
+
+    if writeEntityData:
+        fname = writeEntityDataFile.replace('{id}', table)
+        f = open(fname, "w+")
+        f.write(json.dumps(entityData, indent = 2))
+        f.close()
