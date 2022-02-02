@@ -1,0 +1,9 @@
+en-core-sci-md @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.4.0/en_core_sci_md-0.4.0.tar.gz
+en-core-sci-scibert @ https://s3-us-west-2.amazonaws.com/ai2-s2-scispacy/releases/v0.4.0/en_core_sci_scibert-0.4.0.tar.gz
+scikit-learn==1.0.2
+scipy==1.7.3
+scispacy==0.4.0
+spacy==3.0.7
+spacy-alignments==0.8.4
+spacy-legacy==3.0.8
+spacy-transformers==1.0.4
