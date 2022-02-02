@@ -1,5 +1,6 @@
-import requests
+import json
 import numbers
+import requests
 import scispacy
 import spacy
 
@@ -8,14 +9,23 @@ from scispacy.linking import EntityLinker
 
 table = 'AIR_90'
 model = 'en_core_sci_md'
-linker = 'mesh'
-max_entities = 1
-filter_for_definitions = False
 
-printRawData = True
-printProgress = True
-printEntities = True
-printDefinitions = True
+linkerSettings = {
+    "linker_name": "mesh",
+    "resolve_abbreviations": True,
+    "max_entities_per_mention": 1,
+    "filter_for_definitions": False
+}
+
+printRawData = False
+printProgress = False
+printEntities = False
+printDefinitions = False
+
+writeRawData = True
+writeRawDataFile = './output/raw.txt'
+writeEntityData = True
+writeEntityDataFile = './output/result.json'
 
 dimensionValues = {}
 
@@ -108,16 +118,10 @@ header, columns = getTable(table)
 
 nlp = spacy.load(model)
 nlp.add_pipe("abbreviation_detector")
-linkerPipe = nlp.add_pipe("scispacy_linker", config = {
-    "resolve_abbreviations": True,
-    "linker_name": linker,
-    "max_entities_per_mention": max_entities,
-    "filter_for_definitions": filter_for_definitions
-})
+linkerPipe = nlp.add_pipe("scispacy_linker", config = linkerSettings)
 
-if printRawData:
-    print(header)
-    print(columns)
+rawData = []
+entityData = []
 
 for i, c in enumerate(header):
     if printProgress:
@@ -125,14 +129,30 @@ for i, c in enumerate(header):
     text = ', '.join(c)
     for row in columns[i]:
         text += '; ' + row
+    rawData.append(text)
     if printRawData:
         print(text)
     doc = nlp(text)
     #print(list(doc.sents))
     for entity in doc.ents:
+        definitions = []
         if printEntities:
             print(entity.text)
         for kb_ent in entity._.kb_ents:
-            if printDefinitions:
-                print(kb_ent[0], linkerPipe.kb.cui_to_entity[kb_ent[0]])
-        print('')
+            definitions.append(linkerPipe.kb.cui_to_entity[kb_ent[0]])
+        entityData.append({ "name": entity.text, "definitions": definitions })
+        if printDefinitions:
+            for definition in definitions:
+                print(definition)
+        if printEntities or printDefinitions:
+            print("")
+
+if writeRawData:
+    f = open(writeRawDataFile, "w+")
+    f.write("\r\n".join(rawData))
+    f.close()
+
+if writeEntityData:
+    f = open(writeEntityDataFile, "w+")
+    f.write(json.dumps(entityData, indent = 2))
+    f.close()
