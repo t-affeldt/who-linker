@@ -1,178 +1,63 @@
 import json
 import numbers
-import requests
 import scispacy
 import spacy
+import os
 
 from scispacy.abbreviation import AbbreviationDetector
 from scispacy.linking import EntityLinker
 
-tables = [
-    "AIR_90",
-    "CHILDMORT5TO14",
-    "DEVICES23",
-    "E25_ban_display_pt_of_sale",
-    "FINPROTECTION_IMP_PG_310_STD",
-    "GDO_q14x2_5",
-    "GHE_YLDNUM",
-    "RSUD_18",
-    "SA_0000001470"
-]
 model = 'en_core_sci_md'
 
 linkerSettings = {
-    "linker_name": "mesh",
+    "linker_name": "umls",
     "resolve_abbreviations": False,
-    "max_entities_per_mention": 1,
+    "max_entities_per_mention": 5,
     "filter_for_definitions": False
 }
 
-printRawData = False
 printProgress = True
-printEntities = False
-printDefinitions = False
 
-writeRawData = True
-writeRawDataFile = './output/{id}_raw.txt'
-writeEntityData = True
-writeEntityDataFile = './output/{id}_result.json'
+tables = os.listdir('./tables')
 
-dimensionValues = {}
+nlp = spacy.load(model)
+if linkerSettings["resolve_abbreviations"]:
+    nlp.add_pipe("abbreviation_detector")
+linkerPipe = nlp.add_pipe("scispacy_linker", config = linkerSettings)
 
-
-def getData(indicator):
-    url = 'https://ghoapi.azureedge.net/api/' + indicator
-
-    r = requests.get(url)
-    data = r.json()
-    return data['value']
-
-def getDimensions():
-    url = 'https://ghoapi.azureedge.net/api/Dimension'
-
-    r = requests.get(url)
-    data = r.json()
-    values = {}
-
-    for v in data['value']:
-        values[v['Code']] = v['Title']
-
-    return values
-
-def getIndicators():
-    url = 'https://ghoapi.azureedge.net/api/Indicator'
-
-    r = requests.get(url)
-    data = r.json()
-    values = {}
-
-    for v in data['value']:
-        values[v['IndicatorCode']] = v['IndicatorName']
-    return values
-
-def getDimensionValues(dimension):
-    url = 'https://ghoapi.azureedge.net/api/DIMENSION/' + dimension + '/DimensionValues'
-
-    if dimension in dimensionValues:
-        return dimensionValues[dimension]
-
-
-    r = requests.get(url)
-    data = r.json()
-    values = {}
-
-    for v in data['value']:
-        values[v['Code']] = v['Title'] + ' (' + v['Code'] + ')'
-        if v['ParentTitle']:
-            values[v['Code']] += ' [' + v['ParentTitle'] + ']'
-
-    dimensionValues[dimension] = values
-    return values
-
-def getTable(table):
-    dimensions = getDimensions()
-    indicators = getIndicators()
-    values = {}
-    data = getData(table)
-    columns = [ 'SpatialDim', 'TimeDim', 'Dim1', 'Dim2', 'Dim3', 'DataSourceDim' ]
-    header = [[] for x in range(0, len(columns))]
-    columnData = [[] for x in range(0, len(columns) + 2)]
-
-    header.append([indicators[table]])
-    header.append(['Comments'])
-
-    for row in data:
-        for i, c in enumerate(columns):
-            v = row[c]
-            type = row[c + 'Type']
-            if not type:
-                continue
-            typeName = dimensions[type]
-            extendedValues = getDimensionValues(type)
-            if not typeName in header[i]:
-                header[i].append(typeName)
-            if not isinstance(v, numbers.Number):
-                if v in extendedValues:
-                    if not extendedValues[v] in columnData[i]:
-                        columnData[i].append(extendedValues[v])
-                elif not v in columnData[i]:
-                    columnData[i].append(v)
-        if not isinstance(row['NumericValue'], numbers.Number) and not row['Value'] in columnData[len(columns)]:
-            columnData[len(columns)].append(row['Value'])
-        if row['Comments'] and not row['Comments'] in columnData[len(columns) + 1]:
-            columnData[len(columns) + 1].append(row['Comments'])
-    return header, columnData
-
-for table in tables:
+def processTable(table):
     if printProgress:
         print("Processing table", table)
 
-    header, columns = getTable(table)
+    f = open('tables/' + table)
+    data = json.load(f)
 
-    nlp = spacy.load(model)
-    if linkerSettings["resolve_abbreviations"]:
-        nlp.add_pipe("abbreviation_detector")
-    linkerPipe = nlp.add_pipe("scispacy_linker", config = linkerSettings)
+    result = []
+    cache = {}
+    for row in data:
+        entry = []
+        for value in row:
+            if not value or isinstance(value, numbers.Number):
+                continue
+            elif value in cache:
+                entry.append(cache[value])
+            else:
+                doc = nlp(value)
+                findings = []
+                for entity in doc.ents:
+                    definitions = []
+                    for kb_ent in entity._.kb_ents:
+                        #definitions.append(linkerPipe.kb.cui_to_entity[kb_ent[0]])
+                        definitions.append(kb_ent[0])
+                    findings.append({ "name": entity.text, "definitions": definitions })
+                entry.append(findings)
+                cache[value] = findings
+        result.append(entry)
+    return result
 
-    rawData = []
-    entityData = []
 
-    for i, c in enumerate(header):
-        if len(c) == 0:
-            if printProgress:
-                print('Skipping empty column', i)
-            continue
-        if printProgress:
-            print('Processing column', i)
-        text = ', '.join(c)
-        for row in columns[i]:
-            text += '; ' + row
-        rawData.append(text)
-        if printRawData:
-            print(text)
-        doc = nlp(text)
-        #print(list(doc.sents))
-        for entity in doc.ents:
-            definitions = []
-            if printEntities:
-                print(entity.text)
-            for kb_ent in entity._.kb_ents:
-                definitions.append(linkerPipe.kb.cui_to_entity[kb_ent[0]])
-            entityData.append({ "name": entity.text, "definitions": definitions })
-            if printDefinitions:
-                for definition in definitions:
-                    print(definition)
-            if printEntities or printDefinitions:
-                print("")
-
-    if writeRawData:
-        fname = writeRawDataFile.replace('{id}', table)
-        f = open(fname, "w+")
-        f.write("\r\n".join(rawData))
-        f.close()
-
-    if writeEntityData:
-        fname = writeEntityDataFile.replace('{id}', table)
-        f = open(fname, "w+")
-        f.write(json.dumps(entityData, indent = 2))
-        f.close()
+for table in tables:
+    result = processTable(table)
+    f = open('output/' + table, "w+")
+    f.write(json.dumps(result, indent = 2))
+    f.close()
