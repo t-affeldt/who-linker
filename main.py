@@ -38,7 +38,7 @@ def processTable(table):
         entry = []
         for value in row:
             if not value or isinstance(value, numbers.Number):
-                continue
+                entry.append(None)
             elif value in cache:
                 entry.append(cache[value])
             else:
